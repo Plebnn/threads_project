@@ -9,6 +9,7 @@ from llama_index.core import StorageContext, load_index_from_storage
 from llama_index.core.agent.workflow import ReActAgent
 from llama_index.core.workflow import Context
 from llama_index.core.agent.workflow import AgentStream, ToolCallResult
+from llama_index.core.workflow.errors import WorkflowRuntimeError
 
 llm = Ollama(
     model= "gemma3:12b",
@@ -27,9 +28,19 @@ embed_model = OllamaEmbedding(
 )
 Settings.embed_model = embed_model
 
+
+
 def deconstructTwitterQueryResponse(twitter_response):
     list_of_tweets = []
     for tweet in twitter_response.data:
+        
+        # CORRECTED LOGIC: Check the 'reply_settings' attribute directly
+        if tweet.reply_settings != 'everyone':
+            print(f"Skipping Tweet {tweet.id}: Replies are limited to '{tweet.reply_settings}'.")
+            continue  # Skip to the next tweet
+    
+        # If the check passes, you can process or add the tweet
+        print(f"OK to reply to Tweet {tweet.id}")
         tweet_id = tweet.id
         original_tweet = tweet.text
         answer_dict = {
@@ -59,6 +70,10 @@ async def checkClaims(tweetlist: list):
         original_tweet = tweet.get("original_tweet")
         translated_original_tweet = tweet.get("translated_original_tweet")
         tweet_id = tweet.get("tweet_id")
+        #chek if tweet is answerabel?
+        tweet_valid =  await llm.acomplete(f"This is a tweet about climate change: Your job is to evaluate if this tweet is fact chackable. If this tweet references recent news or is in any other form unchekable, answer with IRRELEVANT, if the tweet can be procecced further, aswer with RELEVANT. Do not anser with anything else {translated_original_tweet}")
+        if (tweet_valid.text!="RELEVANT"):
+            continue
         prompt = f"""
         This is a tweet from Twitter:
         "{translated_original_tweet}"
@@ -67,18 +82,21 @@ async def checkClaims(tweetlist: list):
         3) Use the RAG_Lookup_tool to fact check the claims in the tweet
         4) If the tweet contains wrong information, write an answer to the tweet in english, where you correct the wrong claims Be direct and critizise missinformation. If the tweet has no claims or all claims are correct answe with: NO_ACTION_NEEDED
         """
-        agent = ReActAgent(tools=[query_engine_tool])
-        ctx = Context(agent)
-        handler = agent.run(prompt, ctx=ctx)
+        try:
+            agent = ReActAgent(tools=[query_engine_tool])
+            ctx = Context(agent)
+            handler = agent.run(prompt, ctx=ctx, max_iterations=40)
+            async for ev in handler.stream_events():
+                # if isinstance(ev, ToolCallResult):
+                #     print(f"\nCall {ev.tool_name} with {ev.tool_kwargs}\nReturned: {ev.tool_output}")
+                if isinstance(ev, AgentStream):
+                    print(f"{ev.delta}", end="", flush=True)
 
-        async for ev in handler.stream_events():
-            # if isinstance(ev, ToolCallResult):
-            #     print(f"\nCall {ev.tool_name} with {ev.tool_kwargs}\nReturned: {ev.tool_output}")
-            if isinstance(ev, AgentStream):
-                print(f"{ev.delta}", end="", flush=True)
-
-        response = await handler
-        ro= response.model_dump()
+            response = await handler
+            ro= response.model_dump()
+        except WorkflowRuntimeError as e:
+            print(f"could not fact check tweet: {tweet_id}")
+            continue
         answer_tweet = ro["response"]["blocks"][0]["text"]
         if answer_tweet != "NO_ACTION_NEEDED":
             answer_dict = {
