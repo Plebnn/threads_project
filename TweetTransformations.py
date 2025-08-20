@@ -10,11 +10,20 @@ from llama_index.core.agent.workflow import ReActAgent
 from llama_index.core.workflow import Context
 from llama_index.core.agent.workflow import AgentStream, ToolCallResult
 from llama_index.core.workflow.errors import WorkflowRuntimeError
+from llama_index.llms.openrouter import OpenRouter
+from config import API_KEY
 
-llm = Ollama(
+"""llm = Ollama(
     model= "gemma3:12b",
     request_timeout=120.0,
     context_window=8128,
+    temperature=0.0
+)"""
+
+llm=OpenRouter(
+    api_key=API_KEY,
+    context_window=8128,
+    model="google/gemma-3-12b-it",
     temperature=0.0
 )
 
@@ -28,18 +37,14 @@ embed_model = OllamaEmbedding(
 )
 Settings.embed_model = embed_model
 
-
-
 def deconstructTwitterQueryResponse(twitter_response):
     list_of_tweets = []
     for tweet in twitter_response.data:
         
-        # CORRECTED LOGIC: Check the 'reply_settings' attribute directly
         if tweet.reply_settings != 'everyone':
             print(f"Skipping Tweet {tweet.id}: Replies are limited to '{tweet.reply_settings}'.")
             continue  # Skip to the next tweet
     
-        # If the check passes, you can process or add the tweet
         print(f"OK to reply to Tweet {tweet.id}")
         tweet_id = tweet.id
         original_tweet = tweet.text
@@ -60,7 +65,7 @@ async def translate_to_german(answer_tweet: str):
 async def checkClaims(tweetlist: list):
     storage_context = StorageContext.from_defaults(persist_dir="./VectorStorage")
     index = load_index_from_storage(storage_context=storage_context)
-    query_engine = index.as_query_engine(llm=Settings.llm,similarity_tok_k=5)
+    query_engine = index.as_query_engine(llm=Settings.llm,similarity_top_k=5)
     query_engine_tool = QueryEngineTool.from_defaults(query_engine=query_engine, name="RAG_Lookup_tool", description="Query engine tool to look up a knowledge base of documents regarding climate change")
     
     
@@ -70,8 +75,10 @@ async def checkClaims(tweetlist: list):
         original_tweet = tweet.get("original_tweet")
         translated_original_tweet = tweet.get("translated_original_tweet")
         tweet_id = tweet.get("tweet_id")
-        #chek if tweet is answerabel?
-        tweet_valid =  await llm.acomplete(f"This is a tweet about climate change: Your job is to evaluate if this tweet is fact chackable. If this tweet references recent news or is in any other form unchekable, answer with IRRELEVANT, if the tweet can be procecced further, aswer with RELEVANT. Do not anser with anything else {translated_original_tweet}")
+        #chek if tweet is answerable?
+        tweet_valid =  await llm.acomplete(f"This is a tweet about climate change: Your job is to evaluate if this tweet is fact chackable. \
+                                           If this tweet references recent news or is in any other form unchekable, answer with IRRELEVANT, \
+                                           if the tweet can be procecced further, aswer with RELEVANT. Do not answer with anything else {translated_original_tweet}")
         if (tweet_valid.text!="RELEVANT"):
             continue
         prompt = f"""
@@ -79,8 +86,9 @@ async def checkClaims(tweetlist: list):
         "{translated_original_tweet}"
         Workflow: 
         2) Extract the claims in the tweet.
-        3) Use the RAG_Lookup_tool to fact check the claims in the tweet
-        4) If the tweet contains wrong information, write an answer to the tweet in english, where you correct the wrong claims Be direct and critizise missinformation. If the tweet has no claims or all claims are correct answe with: NO_ACTION_NEEDED
+        3) Use the RAG_Lookup_tool to fact check the claims in the tweet.
+        4) If the tweet contains wrong information, write an answer to the tweet in english, where you correct the wrong claims.
+        Be direct and critizise missinformation. If the tweet has no claims or all claims are correct answer with: NO_ACTION_NEEDED
         """
         try:
             agent = ReActAgent(tools=[query_engine_tool])
@@ -108,6 +116,3 @@ async def checkClaims(tweetlist: list):
             list_of_relevant_tweets.append(answer_dict)
 
     return list_of_relevant_tweets
-
-
-
