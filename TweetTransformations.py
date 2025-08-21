@@ -85,9 +85,9 @@ async def checkClaims(tweetlist: list):
         This is a tweet from Twitter:
         "{translated_original_tweet}"
         Workflow: 
-        2) Extract the claims in the tweet.
-        3) Use the RAG_Lookup_tool to fact check the claims in the tweet.
-        4) If the tweet contains wrong information, write an answer to the tweet in english, where you correct the wrong claims.
+        1) Extract the claims in the tweet.
+        2) Use the RAG_Lookup_tool to fact check the claims in the tweet.
+        3) If the tweet contains wrong information, write an answer to the tweet in english, where you correct the wrong claims.
         Be direct and critizise missinformation. If the tweet has no claims or all claims are correct answer with: NO_ACTION_NEEDED
         """
         try:
