@@ -1,0 +1,5 @@
+tweepy
+llama-index
+llama-index-llms-ollama
+llama-index-embeddings-ollama
+llama-index-llms-openrouter
